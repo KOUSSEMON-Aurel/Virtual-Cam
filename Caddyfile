@@ -1,0 +1,9 @@
+# Configuration Caddy pour HTTPS automatique
+
+# Remplace 192.168.100.6 par ton IP locale
+192.168.100.6:443 {
+    tls internal  # Certificat auto-signé
+    
+    # Reverse proxy vers le serveur Rust
+    reverse_proxy localhost:8080
+}

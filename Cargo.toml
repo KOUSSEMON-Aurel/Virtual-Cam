@@ -1,0 +1,51 @@
+[package]
+name = "phonecam-ultimate"
+version = "1.0.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+lto = "fat"                    # Link-time optimization
+codegen-units = 1              # Maximum optimization
+panic = "abort"                # No unwinding
+strip = true
+overflow-checks = false
+debug-assertions = false
+
+# Target-specific optimizations
+[profile.release.package."*"]
+opt-level = 3
+
+[dependencies]
+# Network
+socket2 = "0.5"                # Raw sockets
+
+# Async runtime
+tokio = { version = "1", features = ["full", "rt-multi-thread", "net"] }
+
+# Zero-copy structures
+crossbeam = "0.8"
+parking_lot = "0.12"           # Fast mutex
+
+# Memory
+mimalloc = "0.1"               # Fast allocator
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Web server
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["fs"] }
+qrcode = "0.12"
+local-ip-address = "0.6"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Video & HW Accel
+ffmpeg-next = "7.0"             # Wrapper FFmpeg (VAAPI/NVDEC)
+libc = "0.2"                    # Syscalls directs et flags O_NONBLOCK
+
+[build-dependencies]
+# Rien pour l'instant

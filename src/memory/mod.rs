@@ -1,0 +1,1 @@
+// Modules simplifiés pour MVP

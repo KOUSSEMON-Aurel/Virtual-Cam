@@ -1,0 +1,5 @@
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+    "-C", "target-cpu=native",     # Détecte automatiquement les features du CPU
+    # "-C", "link-arg=-fuse-ld=mold", # Désactivé si mold n'est pas installé
+]

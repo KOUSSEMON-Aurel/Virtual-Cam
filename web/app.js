@@ -178,22 +178,72 @@ class PhoneCamUltimate {
             this.encoder.close();
         }
 
-        this.log('[ENCODER] Initialisation...');
+        // CRUCIAL: Récupérer la VRAIE résolution de la caméra
+        const [track] = stream.getVideoTracks();
+        const settings = track.getSettings();
+        const realWidth = settings.width;
+        const realHeight = settings.height;
+        const realFps = settings.frameRate || 30;
 
-        const tryConfigs = [
-            { codec: 'avc1.420028', width: this.currentWidth, height: this.currentHeight, bitrate: 4_000_000, framerate: 60 }, // High-res 60FPS
-            { codec: 'avc1.42001f', width: 1280, height: 720, bitrate: 2_500_000, framerate: 60 }, // Standard 720p 60FPS
-            { codec: 'avc1.42E01E', width: 1280, height: 720, bitrate: 2_000_000, framerate: 30 }, // Safe 720p 30FPS
-            { codec: 'avc1.42E01E', width: 640, height: 360, bitrate: 800_000, framerate: 30 }   // 360p fallback
-        ];
+        this.log(`[TRACK] 📐 Résolution RÉELLE captée: ${realWidth}x${realHeight} @ ${realFps.toFixed(0)}fps`);
+        this.log(`[TRACK] 📱 Device: ${track.label}`);
+
+        this.log('[ENCODER] Initialisation avec résolution réelle...');
+
+        // Génération dynamique des configurations pour supporter Portrait/Paysage
+        const isPortrait = realHeight > realWidth;
+        const tryConfigs = [];
+
+        // 1. Essayer la résolution native (celle capturée)
+        // On réduit un peu le bitrate pour aider l'encodeur mobile
+        tryConfigs.push({
+            codec: 'avc1.42001f',
+            width: realWidth,
+            height: realHeight,
+            bitrate: isPortrait ? 3_000_000 : 5_000_000,
+            framerate: 60,
+            profile: 'Natif 60fps'
+        });
+
+        tryConfigs.push({
+            codec: 'avc1.42001f',
+            width: realWidth,
+            height: realHeight,
+            bitrate: 2_500_000,
+            framerate: 30,
+            profile: 'Natif 30fps'
+        });
+
+        // 2. Essayer la demi-résolution (très efficace si la native est trop grosse, ex: 1080p -> 540p)
+        // Cela garde le ratio exact !
+        const halfW = Math.floor(realWidth / 2) & ~1; // Pair
+        const halfH = Math.floor(realHeight / 2) & ~1; // Pair
+        tryConfigs.push({
+            codec: 'avc1.42E01E',
+            width: halfW,
+            height: halfH,
+            bitrate: 1_500_000,
+            framerate: 30,
+            profile: `Half-Res (${halfW}x${halfH})`
+        });
+
+        // 3. Fallbacks standards mais orientés correctement
+        if (isPortrait) {
+            // Portrait Fallbacks
+            tryConfigs.push({ codec: 'avc1.42E01E', width: 720, height: 1280, bitrate: 2_000_000, framerate: 30, profile: '720p Portrait' });
+            tryConfigs.push({ codec: 'avc1.42E01E', width: 360, height: 640, bitrate: 800_000, framerate: 30, profile: '360p Portrait' });
+        } else {
+            // Landscape Fallbacks
+            tryConfigs.push({ codec: 'avc1.42E01E', width: 1280, height: 720, bitrate: 2_000_000, framerate: 30, profile: '720p Landscape' });
+            tryConfigs.push({ codec: 'avc1.42E01E', width: 640, height: 360, bitrate: 800_000, framerate: 30, profile: '360p Landscape' });
+        }
 
         let success = false;
         for (const config of tryConfigs) {
             try {
-                this.log(`[ENCODER] 🧪 Essai: ${config.codec} @ ${config.width}x${config.height} (${config.framerate}fps)`);
+                this.log(`[ENCODER] 🧪 Test ${config.profile}: ${config.width}x${config.height} @ ${config.framerate}fps`);
                 this.encoder = new VideoEncoder({
                     output: (chunk, metadata) => {
-                        // Crucial: Transmettre la description AVC (SPS/PPS) au dashboard
                         if (metadata && metadata.decoderConfig && metadata.decoderConfig.description) {
                             const desc = Array.from(new Uint8Array(metadata.decoderConfig.description));
                             this.sendMetadata({
@@ -203,7 +253,7 @@ class PhoneCamUltimate {
                                 height: config.height,
                                 description: desc
                             });
-                            this.log('[ENCODER] 📤 Description AVC transmise');
+                            this.log('[ENCODER] 📤 Config AVC envoyée');
                         }
                         this.handleEncodedChunk(chunk);
                     },
@@ -211,33 +261,37 @@ class PhoneCamUltimate {
                 });
 
                 config.latencyMode = 'realtime';
+                config.hardwareAcceleration = 'prefer-hardware'; // Force hardware pour la vitesse
 
                 const support = await VideoEncoder.isConfigSupported(config);
                 if (support.supported) {
                     this.encoder.configure(config);
-                    this.log(`[ENCODER] ✅ SUCCÈS: ${config.codec}`);
+                    this.log(`[ENCODER] ✅ SUCCÈS ${config.profile}: ${config.width}x${config.height}`);
                     this.currentWidth = config.width;
                     this.currentHeight = config.height;
+
+                    // Envoyer la résolution RÉELLE au serveur
+                    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                        this.sendMetadata({
+                            type: 'metadata',
+                            width: config.width,
+                            height: config.height
+                        });
+                    }
+
                     success = true;
                     break;
                 } else {
-                    this.log(`[ENCODER] ⏭️ Non supporté`);
+                    this.log(`[ENCODER] ⏭️ ${config.profile} non supporté`);
                 }
             } catch (e) {
-                this.log(`[ENCODER] ❌ Échec: ${e.message}`);
+                this.log(`[ENCODER] ❌ Échec ${config.profile}: ${e.message}`);
             }
         }
 
-        if (!success) {
-            throw new Error("L'encodeur matériel H.264 refuse toutes les configurations. Votre tablette est peut-être trop ancienne pour WebCodecs.");
-        }
+        if (!success) throw new Error("Encodeur incompatible");
 
-        document.getElementById('status').innerText = '✅ Streaming actif !';
-
-        const [track] = stream.getVideoTracks();
-        const settings = track.getSettings();
-        this.log(`[TRACK] Réel: ${settings.width}x${settings.height} @ ${settings.frameRate?.toFixed(0)}fps`);
-        this.log(`[TRACK] Label: ${track.label}`);
+        document.getElementById('status').innerText = '✅ STREAMING ACTIF';
 
         // Vérifier si MediaStreamTrackProcessor est disponible
         if (typeof MediaStreamTrackProcessor !== 'undefined') {

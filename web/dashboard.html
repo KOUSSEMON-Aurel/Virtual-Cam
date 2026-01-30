@@ -361,8 +361,12 @@
                 return;
             }
 
-            canvas.width = width;
-            canvas.height = height;
+            // Si pas de résolution fournie, utiliser un ratio mobile par défaut (9:16 portrait)
+            const finalWidth = width || 720;
+            const finalHeight = height || 1280;
+
+            canvas.width = finalWidth;
+            canvas.height = finalHeight;
             canvas.style.display = 'block';
             noVideo.style.display = 'none';
 
@@ -373,6 +377,7 @@
                         canvas.width = frame.displayWidth;
                         canvas.height = frame.displayHeight;
                         document.getElementById('resolution').innerText = `${frame.displayWidth}x${frame.displayHeight}`;
+                        addLog(`🔄 Résolution ajustée: ${frame.displayWidth}x${frame.displayHeight}`);
                     }
                     ctx.drawImage(frame, 0, 0);
                     frame.close();
@@ -387,10 +392,9 @@
             decoder.configure({
                 codec: 'avc1.42001f', // H.264 Baseline Profile
                 optimizeForLatency: true,
-                // Pas de description - les SPS/PPS sont dans les keyframes
             });
 
-            addLog(`Décodeur initialisé (${width}x${height})`);
+            addLog(`Décodeur initialisé (${finalWidth}x${finalHeight})`);
         }
 
         const videoSocket = new WebSocket(`${protocol}//${window.location.host}/video`);

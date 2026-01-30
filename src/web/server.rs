@@ -56,6 +56,7 @@ pub async fn start_server_without_pipeline(http_port: u16, udp_port: u16, metric
     println!("🌐 Serveur Web : http://{}", addr);
     
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    // Axum 0.7+ gère automatiquement TCP_NODELAY
     axum::serve(listener, app).await.unwrap();
 }
 
